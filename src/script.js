@@ -1,7 +1,7 @@
 var deepslateResources;
 const { mat4, vec3 } = glMatrix;
 
-document.addEventListener("DOMContentLoaded", function(event) { 
+document.addEventListener("DOMContentLoaded", function(event) {
   const image = document.getElementById('atlas');
   if (image.complete) {
     loadResources(image);
@@ -65,93 +65,55 @@ function createRenderer(structure) {
   //const canvas = document.getElementById('render-canvas');
 
   const gl = canvas.getContext('webgl');
-  
+
   // Need chunksize 8 as seems to be a max number of faces per chunk that will render
   const renderer = new deepslate.StructureRenderer(gl, structure, deepslateResources, options={chunkSize: 8});
 
   // Crappy controls
-  let viewDist = 4;
-  let xRotation = 0.8;
-  let yRotation = 0.5;
-  let xOffset = 0;
-  let yOffset = 0;
   const size = structure.getSize();
-  let cameraPos = vec3.create();
-  vec3.set(cameraPos, -size[0] / 2, -size[1] / 2, -size[2] / 2);
-  
+
+  const center = vec3.fromValues(-size[0] / 2, -size[1] / 2, -size[2] / 2);
+  const cameraPos = vec3.fromValues(0, 0, Math.max(size[0], size[1]) + size[2] / 2);
+  // Just to have somewhere to store the negative of the camera.
+  const minusCam = vec3.create();
+
+  const rotate = mat4.create();
+  const view = mat4.create();
+
+  mat4.translate(rotate, rotate, vec3.negate(minusCam, cameraPos));
+
 
   function render() {
-
-    yRotation = yRotation % (Math.PI * 2);
-    xRotation = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, xRotation));
-    viewDist = Math.max(1, Math.min(20, viewDist));
-
-    const view = mat4.create();
-    mat4.rotateX(view, view, xRotation);
-    mat4.rotateY(view, view, yRotation);
-    mat4.translate(view, view, cameraPos);//[xOffset, yOffset, -viewDist]);
-    //mat4.translate(view, view, );
-
+    mat4.translate(view, rotate, center)
     renderer.drawStructure(view);
     renderer.drawGrid(view);
   }
   requestAnimationFrame(render);
 
-  let rotatePos = null;
-  let dragPos = null;
+
+  let mousePos = null;
   canvas.addEventListener('mousedown', evt => {
     if (evt.button === 0) {
       evt.preventDefault();
-      dragPos = [evt.clientX, evt.clientY];
-    } else if (evt.button === 1) {
-      evt.preventDefault();
-      rotatePos = [evt.clientX, evt.clientY];;
+      mousePos = [evt.clientX, evt.clientY];
     }
   })
   canvas.addEventListener('mousemove', evt => {
-    if (rotatePos) {
-      yRotation += (evt.clientX - rotatePos[0]) / 200;
-      xRotation += (evt.clientY - rotatePos[1]) / 200;
-      rotatePos = [evt.clientX, evt.clientY];
-
-      requestAnimationFrame(render);
-
-    } else if (dragPos) {
-      xOffset = (evt.clientX - dragPos[0]) * viewDist / 500;
-      yOffset = (evt.clientY - dragPos[1]) * viewDist / 500;
-      dragPos = [evt.clientX, evt.clientY];
-
-      let offset = vec3.create();
-      vec3.set(offset, xOffset, -yOffset, 0);
-      vec3.rotateX(offset, offset, [0,0,0], -xRotation);
-      vec3.rotateY(offset, offset, [0,0,0], -yRotation);
-
-      vec3.add(cameraPos, cameraPos, offset);
+    if (mousePos) {
+      mat4.rotateY(rotate, rotate, (evt.clientX - mousePos[0]) / 200);
+      mousePos = [evt.clientX, evt.clientY];
 
       requestAnimationFrame(render);
     }
   })
-  canvas.addEventListener('mouseup', evt => {
-    if (evt.button === 0) {
-      dragPos = null;
-    } else if (evt.button === 1) {
-      rotatePos = null;
-      evt.preventDefault();
-    }
-  })
-  canvas.addEventListener('wheel', evt => {
+
+  const stop = evt => {
+    mousePos = null;
     evt.preventDefault();
-    //viewDist += evt.deltaY / 100;
+  }
+  canvas.addEventListener('mouseup', stop)
+  canvas.addEventListener('mouseout', stop)
 
-    let offset = vec3.create();
-    vec3.set(offset, 0, 0, - evt.deltaY / 200);
-    vec3.rotateX(offset, offset, [0,0,0], -xRotation);
-    vec3.rotateY(offset, offset, [0,0,0], -yRotation);
-
-    vec3.add(cameraPos, cameraPos, offset);
-
-    requestAnimationFrame(render);
-  })
 }
 
 function structureFromLitematic(litematic) {
@@ -163,9 +125,9 @@ function structureFromLitematic(litematic) {
   width = blocks.length;
   height = blocks[0].length;
   depth = blocks[0][0].length;
-  
+
   const structure = new deepslate.Structure([width, height, depth]);
-  
+
   /*
   // Example blocks
   structure.addBlock([1, 0, 0], "minecraft:stone")
@@ -174,7 +136,7 @@ function structureFromLitematic(litematic) {
   structure.addBlock([0, 0, 0], "minecraft:wall_torch", { "facing": "west" });
   structure.addBlock([2, 1, 0], "minecraft:scaffolding", { "bottom": "false", "waterlogged": "true", "distance": "0" });
   */
-  
+
   // Add blocks manually from the blocks loaded from the NBT
   var blockCount = 0
   console.log("Building blocks...");
@@ -183,18 +145,18 @@ function structureFromLitematic(litematic) {
       for (let z=0; z < depth; z++) {
         blockID = blocks[x][y][z];
         if (blockID > 0) { // Skip air-blocks
-        
+
           if(blockID < blockPalette.length) {
             blockInfo = blockPalette[blockID];
             blockName = blockInfo.Name;
             blockCount++;
-            
+
             if (blockInfo.hasOwnProperty("Properties")) {
               structure.addBlock([x, y, z], blockName, blockInfo.Properties);
             } else {
               structure.addBlock([x, y, z], blockName);
             }
-            
+
           } else {
             // Something obvious so we know when things go wrong
             structure.addBlock([x, y, z], "minecraft:stone")
